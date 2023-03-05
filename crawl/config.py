@@ -1,0 +1,22 @@
+'''
+as crawl  settings
+'''
+
+# 登录用户和密码
+__PATERN_LOGIN_USER_NAME__ = "13270810236"
+__PATERN_LOGIN_PASSWORD__  = "Mars@123P!"
+
+# 是否自动输入登录汉字验证码，有错误几率，配置决定是否自动；默认自动输入
+# 在网站有纵深爬虫识别机制时可以禁止
+#__LOGIN_CHECKCODE_AUTO_ENTER_IN = False
+__LOGIN_CHECKCODE_AUTO_ENTER_IN = True
+
+# 自动浏览页面时随机等待设置，视网络条件而定
+__COMMON_NAVIGATE_PAGE_SLEEP_MIN__        = 15
+__COMMON_NAVIGATE_PAGE_SLEEP_MAX__        = 21
+
+__COMMON_NAVIGATE_PAGE_MIDDLE_SLEEP_MIN__  = 6
+__COMMON_NAVIGATE_PAGE_MIDDLE_SLEEP_MAX__  = 11
+
+__COMMON_NAVIGATE_PAGE_SHORT_SLEEP_MIN__  = 2
+__COMMON_NAVIGATE_PAGE_SHORT_SLEEP_MAX__  = 5
