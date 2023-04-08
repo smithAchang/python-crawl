@@ -58,7 +58,7 @@ def processResponse(response):
 
 def crawlPageGet(url, params):
   
-   response    = requests.get('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', params=params, timeout=10)
+   response    = requests.get('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', params=params, timeout=10, verify=False)
 
    return processResponse(response)
 
@@ -66,7 +66,7 @@ def crawlPagePost(url, formdata):
 
 	headers     = {'Content-Type':'application/x-www-form-urlencoded'}
 	#data        = {'orgNoType':1,'orgNo':'MA59HCME4'}
-	response    = requests.post('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', headers=headers, data=formdata, timeout=10)
+	response    = requests.post('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', headers=headers, data=formdata, timeout=10, verify=False)
 	return processResponse(response)
 
 def writeQueryResult(new_worksheet, result):
@@ -75,54 +75,55 @@ def writeQueryResult(new_worksheet, result):
    new_worksheet.write(row, write_name_cell_pos + 1 , result[1])
    new_worksheet.write(row, write_name_cell_pos + 2,  result[2])
 
+if __name__ == '__main__':
 
-# 放在当前目录可以只输入文件名
-pathtofile = u"data.xls"
+   # 放在当前目录,可以只输入文件名
+   pathtofile   = u"data.xls"
 
 
-try:
-   workbook  = xlrd.open_workbook(pathtofile)  # 打开工作簿
-   sheets    = workbook.sheet_names()  # 获取工作簿中的所有表格
-   worksheet = workbook.sheet_by_name(sheets[0])  # 获取工作簿中所有表格中的的第一个表格
-   rows      = worksheet.nrows  # 获取表格中已存在的数据的行数
+   try:
+      workbook  = xlrd.open_workbook(pathtofile)  # 打开工作簿
+      sheets    = workbook.sheet_names()  # 获取工作簿中的所有表格
+      worksheet = workbook.sheet_by_name(sheets[0])  # 获取工作簿中所有表格中的的第一个表格
+      rows      = worksheet.nrows  # 获取表格中已存在的数据的行数
 
-   logging.info("create new sheet for write form old file ...")
-   new_workbook  = copy(workbook)  # 将xlrd对象拷贝转化为xlwt对象
-   new_worksheet = new_workbook.get_sheet(0)  # 获取转化后工作簿中的第一个表格
-   new_workbook.save(pathtofile)  # 尝试保存，以避免最后出现保存错误
+      logging.info("create new sheet for write form old file ...")
+      new_workbook  = copy(workbook)  # 将xlrd对象拷贝转化为xlwt对象
+      new_worksheet = new_workbook.get_sheet(0)  # 获取转化后工作簿中的第一个表格
+      new_workbook.save(pathtofile)  # 尝试保存，以避免最后出现保存错误
 
-   logging.debug("first row is logo and second row is headers ...")
+      logging.debug("first row is logo and second row is headers ...")
 
-   for row in range(2, rows):
-   	orgName  = worksheet.cell_value(row, 0)
-   	creditNo = worksheet.cell_value(row, 1)
-   	logging.debug("cellvalue: " + orgName + " ,creditNo: " + creditNo + " ,creditNoLen: " + str(len(creditNo)))
+      for row in range(2, rows):
+      	orgName  = worksheet.cell_value(row, 0)
+      	creditNo = worksheet.cell_value(row, 1)
+      	logging.debug("cellvalue: " + orgName + " ,creditNo: " + creditNo + " ,creditNoLen: " + str(len(creditNo)))
 
-   	result   = crawlPageGet('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', {'orgName': orgName})
+      	result   = crawlPageGet('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', {'checkType': 2, 'orgName': orgName})
 
-   	if len(result) != 0 :
-   	 
-   	  if len(result[0]) == 0:
-   	   orgNo           = creditNo[-10 : -1 : 1] # 特殊场景
-   	   logging.warning("cellvalue:" + orgName + " is needed query orgNo("+ orgNo + ") by post method at row: " + str(row))
-   	   formdata        =  {'orgNoType': 1, 'orgNo': orgNo}
-   	   result          = crawlPagePost('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', formdata)
+      	if len(result) != 0 :
+      	 
+      	  if len(result[0]) == 0:
+      	   orgNo           = creditNo[-10 : -1 : 1] # 特殊场景
+      	   logging.warning("cellvalue:" + orgName + " is needed query orgNo("+ orgNo + ") by post method at row: " + str(row))
+      	   formdata        =  {'orgNoType': 1, 'orgNo': orgNo}
+      	   result          = crawlPagePost('https://pro.gdstc.gd.gov.cn/egrantweb/reg-organization/toOrgSameName', formdata)
 
-   	   if len(result) == 0 :
-   	   	 logging.error("try to query by orgNo failed !\r\n\r\n")
-   	   	 continue
+      	   if len(result) == 0 :
+      	   	 logging.error("try to query by orgNo failed !\r\n\r\n")
+      	   	 continue
 
-   	else:
-   	   logging.error("query failed  with no result, please check!\r\n\r\n")
-   	   continue
-  
-   	logging.info("\r\n\r\n公司名称: " + orgName + " , 统一社会信用代码: " + creditNo +  "\r\n姓名:     " + result[0] + " , 姓名长度: " + str(len(result[0])) + "\r\n联系电话: " + result[1] + "\r\n电子邮件: " + result[2] + "\r\n")
-   	writeQueryResult(new_worksheet, result)
+      	else:
+      	   logging.error("query failed  with no result, please check!\r\n\r\n")
+      	   continue
+     
+      	logging.info("\r\n\r\n公司名称: " + orgName + " , 统一社会信用代码: " + creditNo +  "\r\n姓名:     " + result[0] + " , 姓名长度: " + str(len(result[0])) + "\r\n联系电话: " + result[1] + "\r\n电子邮件: " + result[2] + "\r\n")
+      	writeQueryResult(new_worksheet, result)
 
-   new_workbook.save(pathtofile)  # 保存工作簿
-   logging.info("save query results, crawl successfully !!")
+      new_workbook.save(pathtofile)  # 保存工作簿
+      logging.info("save query results, crawl successfully !!")
 
-finally:
-   end = datetime.datetime.today()
-   logging.warning("exit from process, totally use {} seconds !!!".format((end - begin).seconds))
-   time.sleep(5)
+   finally:
+      end = datetime.datetime.today()
+      logging.warning("exit from process, totally use {} seconds !!!".format((end - begin).seconds))
+      time.sleep(5)
