@@ -16,8 +16,8 @@ from crawl.colorlog import ColorLog
 
 
 def walkFiles(dirPath, oper, deep=False):
-    temp = os.walk(dirPath)
-    for home, childDirs, files in temp:
+    # os.walk is a generator
+    for home, childDirs, files in os.walk(dirPath):
         if deep:  
             for childDir in childDirs:
                 print('walk child dir:%s'%childDir)
@@ -39,21 +39,29 @@ def grayImage(home, file):
 
 def splitImage(home, file):
     gray      = grayImage(home, file)
-    homeSplit = os.path.join(home, 'split')
     # 需要定制
     digit1  = gray[5:31, 12:34]
-    cv.imwrite(os.path.join(homeSplit, '%s.split1.png'%file), digit1)
+  
     digit2  = gray[5:31, 35:53]
     addColums = np.zeros((digit1.shape[0], digit1.shape[1]    - digit2.shape[1]), dtype='uint8')
     digit2  = np.hstack((digit2, addColums))
-    cv.imwrite(os.path.join(homeSplit, '%s.split2.png'%file), digit2)
+   
     digit3  = gray[5:31, 54:73]
     addColums = np.zeros((digit1.shape[0], digit1.shape[1]    - digit3.shape[1]), dtype='uint8')
     digit3  = np.hstack((digit3, addColums))
-    cv.imwrite(os.path.join(homeSplit, '%s.split3.png'%file), digit3)
+   
     digit4  = gray[5:31, 74:94]
     addColums = np.zeros((digit1.shape[0], digit1.shape[1]    - digit4.shape[1]), dtype='uint8')
     digit4  = np.hstack((digit4, addColums))
+    return digit1, digit2, digit3, digit4
+
+def splitImageToFile(home, file):
+    digit1, digit2, digit3, digit4      = splitImage(home, file)
+    homeSplit = os.path.join(home, 'split')
+    # 需要定制
+    cv.imwrite(os.path.join(homeSplit, '%s.split1.png'%file), digit1)
+    cv.imwrite(os.path.join(homeSplit, '%s.split2.png'%file), digit2)
+    cv.imwrite(os.path.join(homeSplit, '%s.split3.png'%file), digit3)
     cv.imwrite(os.path.join(homeSplit, '%s.split4.png'%file), digit4)
 
 def splitImages():
@@ -62,7 +70,7 @@ def splitImages():
     if os.path.exists(homeSplit):
         shutil.rmtree(homeSplit)
     os.makedirs(homeSplit)
-    walkFiles(os.path.join(os.getcwd(), 'KMean'), splitImage)
+    walkFiles(os.path.join(os.getcwd(), 'KMean'), splitImageToFile)
 
 def collectSplitImages():
     grayImages = []
@@ -86,6 +94,29 @@ def KMeanAI(ndImages, K=2):
     print('compatness: %f'%compatness)
     return labels
 
+def collectDigitTrainData(home, file, train_samples):
+    img = grayImage(home, file)
+    # 利用转置
+    train_samples.append(img.T)
+
+
+def produceTrainData():
+    homeDigit = os.path.join(os.getcwd(), 'KMeanDigits')
+    
+    samples   = []
+    ndLabels  = np.array([], dtype='uint8')
+    for i in range(10):
+        eachDigitHome = os.path.join(homeDigit, str(i))
+        oldLen        = len(samples)
+        walkFiles(eachDigitHome, lambda home, file: collectDigitTrainData(home, file, samples))
+        ndLabels      = np.hstack((ndLabels, np.repeat(i, len(samples) - oldLen)))
+    ndLabels  = ndLabels.reshape((ndLabels.shape[0], -1))
+    ndSamples = np.array(samples)
+    ndSamples = np.float32(ndSamples).reshape((ndSamples.shape[0], -1))
+    ColorLog.info("ndSamples:%s, ndLabels:%s"%(str(ndSamples.shape), str(ndLabels.shape)))
+    return ndSamples, ndLabels
+
+
 def svmAI(trainData, train_labels, savedFile='svm_data_kmean.dat'):
     #svmKernel = cv.ml.SVM_LINEAR
     svmKernel = cv.ml.SVM_RBF
@@ -107,7 +138,7 @@ def svmAI(trainData, train_labels, savedFile='svm_data_kmean.dat'):
     # stat
     mask = result==train_labels 
     correct = np.count_nonzero(mask)
-    ColorLog.info("\r\nstat:", correct*100.0/result.size)
+    ColorLog.info("stat: %f"%((correct*100.0)/result.size))
 
     svm2   = cv.ml.SVM_load(savedFile)
 
@@ -116,14 +147,14 @@ def svmAI(trainData, train_labels, savedFile='svm_data_kmean.dat'):
     # stat
     mask = result==train_labels 
     correct = np.count_nonzero(mask)
-    ColorLog.info("\r\nstats when reload:", correct*100.0/result.size)
+    ColorLog.info("stats when reload:%f"%((correct*100.0)/result.size))
 
 def downloadImages():
     downloadHome = os.path.join(os.getcwd(), 'KMean')
     for i in range(1, 10024):
         response = requests.get('https://pro.gdstc.gd.gov.cn/egrantweb/validatecode.jpg?date=%d&authCodeFunType=orgGlyInfoSearch'%time.time(), timeout=60, verify=False)
         if response.status_code != 200 :
-            ColorLog.info('\r\nloop: %d in failure! status_code: %d'%(i, response.status_code))
+            ColorLog.info('loop: %d in failure! status_code: %d'%(i, response.status_code))
             continue
             
         image = cv.imdecode(np.array(bytearray(response.content), dtype='uint8'), cv.IMREAD_UNCHANGED)
@@ -135,7 +166,7 @@ def downloadImages():
 if __name__ == '__main__':
     argc = len(sys.argv)
     if argc < 2 :
-        ColorLog.notice('\r\nargc:%d\r\nUsage: program split | kmean | ai'%argc)
+        ColorLog.notice('argc:%d\r\nUsage: program split | kmean | ai'%argc)
         sys.exit()
 
     arg = sys.argv[1]
@@ -144,7 +175,7 @@ if __name__ == '__main__':
         files, ndImages = collectSplitImages()
         # 10个数字10个聚类
         labels = KMeanAI(ndImages, 10)
-        ColorLog.notice('\r\ntrain data len: %d, labels: %d, these must be equal!'%(len(files), len(labels)))
+        ColorLog.notice('train data len: %d, labels: %d, these must be equal!'%(len(files), len(labels)))
         homeSplit   = os.path.join(os.getcwd(), 'KMean', 'split')
         homeCluster = os.path.join(os.getcwd(), 'KMean', 'cluster')
 
@@ -162,4 +193,19 @@ if __name__ == '__main__':
     elif arg == 'split' :
         pass
     elif arg == 'ai' :
-        pass    
+        ndSamples, ndLabels = produceTrainData()
+        ColorLog.info('ndSamples:%s, ndLabels:%s'%(str(ndSamples.dtype), str(ndLabels.dtype)))
+        svmAI(ndSamples, ndLabels)
+    elif arg == 'useAi' :
+        svm   = cv.ml.SVM_load('svm_data_kmean.dat')
+        homeKmean = os.path.join(os.getcwd(), "KMean")
+        testFile  = sys.argv[2]
+        for i in splitImage(homeKmean, testFile):
+            ColorLog.notice('input shape:%s'%str(i.shape))
+            i      = np.float32(i).T
+            ColorLog.notice('after transform shape:%s'%str(i.shape))
+
+            i = i.reshape(1, -1)
+            ColorLog.notice('after reshape:%s'%str(i.shape))
+            result = svm.predict(i)[1]
+            ColorLog.notice('test data : %s, shape:%s, predict labels: %d ...'%(testFile, str(i.shape), result))
