@@ -14,6 +14,7 @@ if __name__ == '__main__':
 from crawl.colorlog import ColorLog
 
 
+ai_data_file = 'svm_data_kmean.dat'
 
 def walkFiles(dirPath, oper, deep=False):
     # os.walk is a generator
@@ -27,18 +28,23 @@ def walkFiles(dirPath, oper, deep=False):
             #print('at home:%s, walk file: %s'%(home, filename))
             oper(home, filename)
 
-# 可以调节阈值
-grayThresh = 87
+
 def grayImage(home, file):
     pathtofile = os.path.join(home, file)
     img  = cv.imread(pathtofile)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    return gray
+
+# 可以调节阈值
+grayThresh = 87
+def grayAndThreshImage(home, file):
+    gray = grayImage(home, file)
     # only white&black .white is 255, black is 0, So using INV mode will get more zero values
     ret, gray_thresh = cv.threshold(gray, grayThresh, 255, cv.THRESH_BINARY_INV)
     return gray_thresh
 
 def splitImage(home, file):
-    gray      = grayImage(home, file)
+    gray      = grayAndThreshImage(home, file)
     # 需要定制
     digit1  = gray[5:31, 12:34]
   
@@ -57,7 +63,7 @@ def splitImage(home, file):
 
 def splitImageToFile(home, file):
     digit1, digit2, digit3, digit4      = splitImage(home, file)
-    homeSplit = os.path.join(home, 'split')
+    homeSplit                           = os.path.join(os.getcwd(), 'KMeanSplit')
     # 需要定制
     cv.imwrite(os.path.join(homeSplit, '%s.split1.png'%file), digit1)
     cv.imwrite(os.path.join(homeSplit, '%s.split2.png'%file), digit2)
@@ -65,7 +71,7 @@ def splitImageToFile(home, file):
     cv.imwrite(os.path.join(homeSplit, '%s.split4.png'%file), digit4)
 
 def splitImages():
-    homeSplit   = os.path.join(os.getcwd(), 'KMean', 'split')
+    homeSplit   = os.path.join(os.getcwd(), 'KMeanSplit')
     #clear files
     if os.path.exists(homeSplit):
         shutil.rmtree(homeSplit)
@@ -78,7 +84,7 @@ def collectSplitImages():
     def _collect(home, file):
         #print(file)
         files.append(file)
-        grayImages.append(grayImage(home, file).T)
+        grayImages.append(grayAndThreshImage(home, file).T)
     walkFiles(os.path.join(os.getcwd(), 'KMean', 'split'), _collect)
     ndImages = np.array(grayImages)
     return files, ndImages
@@ -95,9 +101,10 @@ def KMeanAI(ndImages, K=2):
     return labels
 
 def collectDigitTrainData(home, file, train_samples):
-    img = grayImage(home, file)
+    # without thresh process because it has been threshed
+    trainDigitImg  = grayImage(home, file)
     # 利用转置
-    train_samples.append(img.T)
+    train_samples.append(trainDigitImg.T)
 
 
 def produceTrainData():
@@ -110,14 +117,16 @@ def produceTrainData():
         oldLen        = len(samples)
         walkFiles(eachDigitHome, lambda home, file: collectDigitTrainData(home, file, samples))
         ndLabels      = np.hstack((ndLabels, np.repeat(i, len(samples) - oldLen)))
-    ndLabels  = ndLabels.reshape((ndLabels.shape[0], -1))
+
+    ColorLog.info("before reshape Samples:%d, ndLabels:%s"%(len(samples), str(ndLabels.shape)))
+    ndLabels  = ndLabels.reshape(ndLabels.shape[0], -1)
     ndSamples = np.array(samples)
-    ndSamples = np.float32(ndSamples).reshape((ndSamples.shape[0], -1))
+    ndSamples = np.float32(ndSamples).reshape(ndSamples.shape[0], -1)
     ColorLog.info("ndSamples:%s, ndLabels:%s"%(str(ndSamples.shape), str(ndLabels.shape)))
     return ndSamples, ndLabels
 
 
-def svmAI(trainData, train_labels, savedFile='svm_data_kmean.dat'):
+def svmAI(trainData, train_labels, savedFile=ai_data_file):
     #svmKernel = cv.ml.SVM_LINEAR
     svmKernel = cv.ml.SVM_RBF
     
@@ -131,6 +140,9 @@ def svmAI(trainData, train_labels, savedFile='svm_data_kmean.dat'):
     if svmKernel == cv.ml.SVM_RBF:
         svm.setGamma(5.383)
 
+    ColorLog.info("trainData shape:%s, train_labels shape:%s"%(str(trainData.shape), str(train_labels.shape)))
+    #ColorLog.info("trainData:%s"%(str(trainData[0])))
+    #ColorLog.info("train_labels:%s"%(str(train_labels)))
     svm.train(trainData, cv.ml.ROW_SAMPLE, train_labels)
     svm.save(savedFile)
     result = svm.predict(trainData)[1]
@@ -162,6 +174,26 @@ def downloadImages():
         time.sleep(1)
 
 
+def predictDigit(svm, digitImg):
+    #ColorLog.notice('input shape:%s'%str(digitImg.shape))
+    digitImg      = np.array(digitImg.T)
+    digitImg      = np.float32(digitImg)
+    #ColorLog.notice('after transform shape:%s'%str(digitImg.shape))
+
+    digitImg = digitImg.reshape(1, -1)
+    #ColorLog.notice('after reshape:%s'%str(digitImg.shape))
+    result   = svm.predict(digitImg)[1]
+    result   = np.int16(result)
+    return result[0][0]
+
+
+def bootstrapSplit(home, file, svm, homeSplit):
+    j = 1
+    for digitImg in splitImage(home, file):
+        digit    = predictDigit(svm, digitImg)
+        cv.imwrite(os.path.join(homeSplit, '%d'%digit, '%s.split%d.png'%(file, j)), digitImg)
+        j += 1
+
 
 if __name__ == '__main__':
     argc = len(sys.argv)
@@ -170,6 +202,8 @@ if __name__ == '__main__':
         sys.exit()
 
     arg = sys.argv[1]
+
+    ColorLog.notice('input args: %s'%sys.argv[1:])
 
     if arg == 'kmean': 
         files, ndImages = collectSplitImages()
@@ -191,21 +225,32 @@ if __name__ == '__main__':
             shutil.copyfile(os.path.join(homeSplit, fileSrc), os.path.join(homeCluster, fileDst))
             i += 1
     elif arg == 'split' :
-        pass
+        splitImages()
+    elif arg == 'bootstrapSplit' :
+        svm         = cv.ml.SVM_load(ai_data_file)
+        homeKmean   = os.path.join(os.getcwd(), "KMean")
+        homeSplit   = os.path.join(os.getcwd(), 'KMeanBootstrapSplit')
+        #clear files
+        if os.path.exists(homeSplit):
+            shutil.rmtree(homeSplit)
+        os.makedirs(homeSplit)
+        for i in range(10):
+            os.makedirs(os.path.join(homeSplit, '%d'%i))
+
+        walkFiles(homeKmean, lambda home, file: bootstrapSplit(home, file, svm, homeSplit))
+
     elif arg == 'ai' :
         ndSamples, ndLabels = produceTrainData()
         ColorLog.info('ndSamples:%s, ndLabels:%s'%(str(ndSamples.dtype), str(ndLabels.dtype)))
         svmAI(ndSamples, ndLabels)
     elif arg == 'useAi' :
-        svm   = cv.ml.SVM_load('svm_data_kmean.dat')
+        svm   = cv.ml.SVM_load(ai_data_file)
         homeKmean = os.path.join(os.getcwd(), "KMean")
+        homeTest  = os.path.join(os.getcwd(), "test")
         testFile  = sys.argv[2]
-        for i in splitImage(homeKmean, testFile):
-            ColorLog.notice('input shape:%s'%str(i.shape))
-            i      = np.float32(i).T
-            ColorLog.notice('after transform shape:%s'%str(i.shape))
-
-            i = i.reshape(1, -1)
-            ColorLog.notice('after reshape:%s'%str(i.shape))
-            result = svm.predict(i)[1]
-            ColorLog.notice('test data : %s, shape:%s, predict labels: %d ...'%(testFile, str(i.shape), result))
+        j = 1
+        for digitImg in splitImage(homeKmean, testFile):
+            #cv.imwrite(os.path.join(homeTest, '%s.split%d.png'%(testFile, j)), digitImg)
+            digit   = predictDigit(svm, digitImg)
+            ColorLog.notice('test file : %s, data shape:%s; predict labels: %d ...'%(testFile, str(digitImg.shape), digit))
+            j += 1
